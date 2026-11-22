@@ -1,0 +1,16 @@
+{
+  "name": "videocitofono-card",
+  "version": "0.1.0",
+  "description": "Scheda Lovelace per il videocitofono: video dal vivo e audio bidirezionale nativi di Home Assistant, apertura automatica quando suona il campanello, pulsante apriporta con conferma.",
+  "license": "MIT",
+  "author": "Corrado Gamberoni",
+  "repository": {"type": "git", "url": "https://github.com/hubcasale/videocitofono-card"},
+  "scripts": {
+    "build": "esbuild src/videocitofono-card.ts --bundle --format=esm --minify --outfile=dist/videocitofono-card.js",
+    "build:dev": "esbuild src/videocitofono-card.ts --bundle --format=iife --outfile=dev/bundle.js",
+    "typecheck": "tsc --noEmit",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --outdir=.test-build --log-level=warning && node --test .test-build/"
+  },
+  "devDependencies": {"esbuild": "^0.24.0", "typescript": "^5.6.0"},
+  "dependencies": {"lit": "^3.2.0"}
+}

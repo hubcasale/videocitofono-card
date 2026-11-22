@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>videocitofono-card · pagina di prova</title>
+<style>
+  :root { --card-background-color:#1c1c1c; --primary-text-color:#e1e1e1; --secondary-text-color:#9b9b9b; --divider-color:#3a3a3a; --secondary-background-color:#2a2a2a; --primary-color:#03a9f4; --success-color:#43a047; --error-color:#db4437; --warning-color:#ffa600; }
+  body.light { --card-background-color:#fff; --primary-text-color:#212121; --secondary-text-color:#727272; --divider-color:#e0e0e0; --secondary-background-color:#f2f2f2; background:#e9ecef; }
+  body { margin:0; padding:12px; background:#111; color:var(--primary-text-color); font-family:Roboto,Helvetica,Arial,sans-serif; }
+  ha-card { display:block; background:var(--card-background-color); border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.25); color:var(--primary-text-color); }
+  #tools { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  #tools button { font:inherit; padding:6px 12px; }
+  #log { font-size:12px; white-space:pre-wrap; color:var(--secondary-text-color); margin-top:12px; }
+</style></head>
+<body>
+<home-assistant></home-assistant>
+<div id="tools"><button id="ring">Suona il campanello</button><button id="open">Apri la porta (sensore)</button><span id="note"></span></div>
+<div id="root"></div>
+<pre id="log"></pre>
+<script>
+// Finti elementi di Home Assistant, quanto basta per vedere la scheda fuori da Home Assistant.
+const GLYPH = { "mdi:play":"▶", "mdi:microphone":"🎤", "mdi:microphone-off":"🚫", "mdi:microphone-outline":"🎙", "mdi:volume-high":"🔊", "mdi:volume-off":"🔇", "mdi:door-open":"🚪", "mdi:lock-open-alert":"⚠", "mdi:check":"✓", "mdi:alert":"!", "mdi:phone-hangup":"✆", "mdi:video":"▣", "mdi:close":"✕", "mdi:doorbell-video":"⌂", "mdi:bell-ring":"🔔" };
+customElements.define("ha-icon", class extends HTMLElement { static observedAttributes=["icon"]; attributeChangedCallback(){ this.textContent = GLYPH[this.getAttribute("icon")] ?? "•"; this.style.cssText="display:inline-flex;font-size:22px;line-height:1"; } });
+customElements.define("ha-card", class extends HTMLElement {});
+customElements.define("state-badge", class extends HTMLElement { set stateObj(s){ this.textContent = s.state === "on" ? "●" : "○"; this.style.cssText = "display:inline-flex;align-items:center;justify-content:center;color:" + (s.state === "on" ? "#ffa600" : "#888"); } });
+customElements.define("home-assistant", class extends HTMLElement {});
+</script>
+<script>
+const params = new URLSearchParams(location.search);
+if (params.get("theme") === "light") document.body.classList.add("light");
+const log = (m) => { document.getElementById("log").textContent = new Date().toLocaleTimeString() + "  " + m + "\n" + document.getElementById("log").textContent; };
+
+// Collegamento finto: un'animazione disegnata su un canvas al posto della telecamera.
+window.__videocitofonoRtc = (hass, entityId, mic, handlers) => {
+  let raf, stopped = false, sender = !!mic;
+  const canvas = document.createElement("canvas"); canvas.width = 640; canvas.height = 480;
+  const ctx = canvas.getContext("2d");
+  const draw = () => { if (stopped) return; const t = Date.now()/1000;
+    ctx.fillStyle = "#26323a"; ctx.fillRect(0,0,640,480);
+    ctx.fillStyle = "#3d4f3f"; ctx.fillRect(0,330,640,150);
+    ctx.fillStyle = "#c9a36b"; ctx.beginPath(); ctx.arc(320+60*Math.sin(t), 210, 60, 0, 6.3); ctx.fill();
+    ctx.fillStyle = "#4a6a8a"; ctx.fillRect(250+60*Math.sin(t), 270, 140, 160);
+    ctx.fillStyle = "#fff"; ctx.font = "20px sans-serif"; ctx.fillText("video di prova · " + entityId + (sender ? " · microfono collegato" : ""), 16, 30);
+    raf = requestAnimationFrame(draw); };
+  return {
+    get hasMicSender() { return sender; },
+    async start() { log("collegamento avviato" + (mic ? " con microfono" : " senza microfono")); if (params.get("fail") === "1") { setTimeout(() => handlers.onError("errore di prova"), 300); return; }
+      draw(); setTimeout(() => { if (!stopped) { handlers.onStream(canvas.captureStream(15)); handlers.onState("connected"); } }, Number(params.get("delay") || 400)); },
+    async setMic(track) { log("microfono " + (track ? "acceso" : "spento") + " sul collegamento"); },
+    stop() { stopped = true; cancelAnimationFrame(raf); log("collegamento chiuso"); },
+  };
+};
+// Microfono finto: una traccia audio silenziosa (oppure un rifiuto, con ?mic=denied; ?mic=real usa quello vero).
+if (params.get("mic") !== "real") window.__videocitofonoMic = async () => {
+  if (params.get("mic") === "denied") { const e = new Error("no"); e.name = "NotAllowedError"; throw e; }
+  const ac = new AudioContext(); const dest = ac.createMediaStreamDestination(); return dest.stream.getAudioTracks()[0];
+};
+</script>
+<script src="bundle.js"></script>
+<script>
+const iso = (ms) => new Date(ms).toISOString();
+let states = {
+  "camera.videocitofono": { entity_id:"camera.videocitofono", state:"idle", attributes:{ friendly_name:"Videocitofono", entity_picture:"data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480"><rect width="640" height="480" fill="#1d262c"/><rect y="330" width="640" height="150" fill="#2c3a2e"/><text x="16" y="30" fill="#aaa" font-size="20" font-family="sans-serif">immagine fissa di prova</text></svg>') }, last_changed: iso(Date.now()-3600e3) },
+  "binary_sensor.campanello": { entity_id:"binary_sensor.campanello", state:"off", attributes:{ friendly_name:"Visitatore" }, last_changed: iso(Date.now() - (params.get("recent") === "1" ? 10e3 : 3600e3)) },
+  "lock.porta": { entity_id:"lock.porta", state:"locked", attributes:{ friendly_name:"Porta ingresso", supported_features: 1 }, last_changed: iso(Date.now()-3600e3) },
+  "binary_sensor.porta_aperta": { entity_id:"binary_sensor.porta_aperta", state:"off", attributes:{ friendly_name:"Porta", on_text:"Aperta", off_text:"Chiusa" }, last_changed: iso(Date.now()-3600e3) },
+  "binary_sensor.persona": { entity_id:"binary_sensor.persona", state:"on", attributes:{ friendly_name:"Persona", on_text:"Rilevata", off_text:"Assente" }, last_changed: iso(Date.now()-60e3) },
+  "sensor.batteria": { entity_id:"sensor.batteria", state:"87", attributes:{ friendly_name:"Batteria serratura", unit_of_measurement:"%" }, last_changed: iso(Date.now()-3600e3) },
+  "person.tablet": { entity_id:"person.tablet", state:"home", attributes:{ friendly_name:"Tablet", user_id:"u-tablet" } },
+  "person.corrado": { entity_id:"person.corrado", state:"home", attributes:{ friendly_name:"Corrado", user_id:"u-corrado" } },
+};
+const subs = [];
+const makeHass = () => ({
+  states, language: params.get("lang") || "it", user: { id: params.get("user") || "u-tablet" },
+  formatEntityState: (s) => s.attributes.unit_of_measurement ? s.state + " " + s.attributes.unit_of_measurement : ({ on: s.attributes.on_text, off: s.attributes.off_text }[s.state] ?? s.state),
+  callWS: async (msg) => {
+    if (msg.type === "camera/capabilities") return { frontend_stream_types:["web_rtc"], two_way_audio: params.get("twoway") !== "0" };
+    throw new Error("unknown_command " + msg.type);
+  },
+  callService: async (domain, service, data, target) => {
+    log("servizio " + domain + "." + service + " su " + JSON.stringify(target));
+    if (params.get("doorfail") === "1") throw new Error("rifiutato");
+    if (domain === "lock") setTimeout(() => setState("lock.porta", "open"), 600), setTimeout(() => setState("lock.porta", "locked"), 5000);
+  },
+  connection: { subscribeMessage: async (cb, msg) => {
+    if (msg.type === "subscribe_entities") { const id = msg.entity_ids[0]; subs.push({ cb, id }); cb({ a: { [id]: { s: states[id].state, lc: Date.parse(states[id].last_changed)/1000 } } }); }
+    return () => {};
+  } },
+});
+const root = document.querySelector("home-assistant");
+let cards = [];
+function push() { const h = makeHass(); root.hass = h; for (const c of cards) c.hass = h; }
+function setState(id, state) {
+  states = { ...states, [id]: { ...states[id], state, last_changed: iso(Date.now()) } };
+  for (const s of subs) if (s.id === id) s.cb({ c: { [id]: { "+": { s: state, lc: Date.now()/1000 } } } });
+  push();
+}
+document.getElementById("ring").onclick = () => { setState("binary_sensor.campanello", "on"); setTimeout(() => setState("binary_sensor.campanello", "off"), 4000); };
+document.getElementById("open").onclick = () => { setState("binary_sensor.porta_aperta", "on"); setTimeout(() => setState("binary_sensor.porta_aperta", "off"), 4000); };
+
+const cfg = { type:"custom:videocitofono-card", camera:"camera.videocitofono", ring:"binary_sensor.campanello", door:"lock.porta", door_sensor:"binary_sensor.porta_aperta", info:["binary_sensor.persona","sensor.batteria"] };
+for (const k of ["title","confirm","talk_mode","idle","fit","door_label"]) if (params.get(k)) cfg[k] = params.get(k);
+for (const k of ["auto_call","auto_talk","popup","end_on_open"]) if (params.get(k)) cfg[k] = params.get(k) === "1";
+for (const k of ["call_seconds","confirm_seconds"]) if (params.get(k)) cfg[k] = Number(params.get(k));
+if (params.get("people")) cfg.popup_people = params.get("people").split(",");
+if (params.get("empty") === "1") { delete cfg.camera; delete cfg.door; }
+if (params.get("clear") === "1") localStorage.removeItem("videocitofono-card.popup");
+document.getElementById("note").textContent = JSON.stringify(cfg);
+// shot=1: solo la scheda, per le immagini del README
+if (params.get("shot") === "1") { document.getElementById("tools").style.display = "none"; document.getElementById("log").style.display = "none"; }
+const w = params.get("w"); if (w) document.getElementById("root").style.width = w + "px";
+push();
+if (params.get("editor") === "1") {
+  // ha-form finto: elenca i campi con etichetta e valore; il pulsante simula un cambio per provare config-changed
+  customElements.define("ha-form", class extends HTMLElement {
+    set data(d) { this._d = d; this._draw(); } set schema(s) { this._s = s; this._draw(); }
+    set computeLabel(f) { this._l = f; this._draw(); } set computeHelper(f) { this._h = f; this._draw(); } set hass(h) {}
+    _rows(s, depth) { return s.flatMap((i) => i.schema ? [`<tr><th colspan="3" style="text-align:left;padding-top:8px">${this._l ? this._l(i) : i.name}</th></tr>`, ...this._rows(i.schema, depth+1)]
+      : [`<tr><td>${this._l ? this._l(i) : i.name}</td><td><code>${JSON.stringify(this._d[i.name])}</code>${i.selector?.select ? " · " + i.selector.select.options.map((o) => o.label).join(" | ") : ""}</td><td style="opacity:.6">${(this._h && this._h(i)) || ""}</td></tr>`]); }
+    _draw() { if (!this._d || !this._s) return;
+      this.innerHTML = `<table style="font-size:12px;color:var(--primary-text-color)">${this._rows(this._s, 0).join("")}</table><button id="b">Accendi finestra automatica e microfono</button>`;
+      this.querySelector("#b").onclick = () => this.dispatchEvent(new CustomEvent("value-changed", { detail:{ value:{ ...this._d, popup:true, auto_talk:true, popup_people:["person.tablet"] } } })); } });
+  const ed = document.createElement("videocitofono-card-editor");
+  ed.setConfig(cfg); ed.hass = makeHass();
+  const out = document.createElement("pre"); out.id = "out"; out.style.cssText = "font-size:12px;color:var(--primary-text-color)";
+  ed.addEventListener("config-changed", (e) => { out.textContent = "config-changed:\n" + JSON.stringify(e.detail.config, null, 1); });
+  document.getElementById("root").append(ed, out);
+} else {
+  const el = document.createElement("videocitofono-card");
+  el.setConfig(cfg);
+  cards.push(el);
+  push();
+  document.getElementById("root").appendChild(el);
+  window.card = el;
+}
+// la finestra automatica crea la propria scheda: le si passa lo stesso hass finto
+new MutationObserver(() => { const o = document.querySelector(".videocitofono-overlay videocitofono-card"); if (o && !cards.includes(o)) { cards.push(o); } cards = cards.filter((c) => c.isConnected); }).observe(document.body, { childList:true, subtree:true });
+if (params.get("autoring")) setTimeout(() => document.getElementById("ring").click(), Number(params.get("autoring")));
+</script></body></html>
