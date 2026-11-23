@@ -69,6 +69,7 @@ info:
 | `idle` | `snapshot` | A riposo mostra un'immagine fissa (`snapshot`) o il video dal vivo senza audio (`live`). |
 | `fit` | `contain` | Adattamento del video: `contain` (tutta l'immagine) o `cover` (riempi lo spazio). |
 | `info` | | Sensori da mostrare sotto il video. |
+| `color` | nessuno | Colore proprio della scheda: lo sfondo ne prende una tinta e il bordo lo segue. Un nome della tavolozza di Home Assistant (`blue-grey`, `amber`…) oppure un colore CSS. |
 
 ## Finestra automatica
 

@@ -33,6 +33,8 @@ export interface CardConfig {
   idle?: IdleMode;
   fit?: FitMode;
   info?: string[];
+  /** colore proprio della scheda: lo sfondo ne prende una tinta e il bordo lo segue; nome della tavolozza di Home Assistant o colore CSS */
+  color?: string;
   [extra: string]: unknown;
 }
 
@@ -57,6 +59,8 @@ export interface Settings {
   idle: IdleMode;
   fit: FitMode;
   info: string[];
+  /** "" = aspetto del tema */
+  color: string;
 }
 
 export const DEFAULTS: Settings = {
@@ -64,7 +68,7 @@ export const DEFAULTS: Settings = {
   confirm: "tap", confirm_seconds: 5,
   auto_call: true, auto_talk: false, popup: false, popup_people: [],
   call_seconds: 120, end_on_open: true,
-  talk_mode: "open", idle: "snapshot", fit: "contain", info: [],
+  talk_mode: "open", idle: "snapshot", fit: "contain", info: [], color: "",
 };
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
@@ -100,6 +104,7 @@ export function normalize(config: CardConfig | null | undefined): Settings {
     idle: pick(c.idle, ["snapshot", "live"] as const, DEFAULTS.idle),
     fit: pick(c.fit, ["contain", "cover"] as const, DEFAULTS.fit),
     info: list(c.info),
+    color: str(c.color) === "none" ? "" : str(c.color),
   };
 }
 
@@ -160,4 +165,5 @@ export const EDITOR_SCHEMA = [
     select("fit", ["contain", "cover"]),
   ]),
   { name: "info", required: false, selector: { entity: { multiple: true } } },
+  { name: "color", required: false, selector: { ui_color: { include_none: true } } },
 ];

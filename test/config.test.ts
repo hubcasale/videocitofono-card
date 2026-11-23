@@ -78,3 +78,18 @@ test("normalize: telecamera di riserva", () => {
   assert.equal(normalize({ camera_fallback: " camera.leggera " }).camera_fallback, "camera.leggera");
   assert.deepEqual(fromEditorData({ ...toEditorData({}), camera: "camera.c", camera_fallback: "camera.l" }, null), { type: "custom:videocitofono-card", camera: "camera.c", camera_fallback: "camera.l" });
 });
+
+test("editor: il colore della scheda si scrive solo se scelto e le chiavi degli altri restano", () => {
+  const base = { type: "custom:videocitofono-card", camera: "camera.porta", grid_options: { rows: 8 } };
+  assert.equal(toEditorData(base).color, "");
+  const on = fromEditorData({ ...toEditorData(base), color: "blue-grey" }, base);
+  assert.equal(on.color, "blue-grey");
+  assert.deepEqual(on.grid_options, { rows: 8 });
+  assert.equal(toEditorData(on).color, "blue-grey");
+  assert.equal("color" in fromEditorData({ ...toEditorData(on), color: "none" }, on), false);
+  // il selettore del colore, svuotato, non manda la chiave
+  const cleared = { ...toEditorData(on) };
+  delete cleared.color;
+  assert.equal("color" in fromEditorData(cleared, on), false);
+  assert.equal(normalize({ color: "none" }).color, "");
+});

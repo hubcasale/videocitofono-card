@@ -1,6 +1,6 @@
 {
   "name": "videocitofono-card",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Scheda Lovelace per il videocitofono: video dal vivo e audio bidirezionale nativi di Home Assistant, apertura automatica quando suona il campanello, pulsante apriporta con conferma.",
   "license": "MIT",
   "author": "Corrado Gamberoni",

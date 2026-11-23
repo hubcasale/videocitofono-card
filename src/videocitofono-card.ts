@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
 import type { PropertyValues, TemplateResult } from "lit";
+import { tintColor } from "./color-logic";
 import { normalize } from "./config";
 import type { CardConfig, Settings } from "./config";
 import { strings } from "./i18n";
@@ -11,7 +12,7 @@ import type { RtcLike } from "./rtc";
 import type { Hass, HassState, MicState } from "./types";
 import "./editor";
 
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 /** Tempo di pressione per aprire la porta in modalita' "tieni premuto". */
 const HOLD_MS = 1500;
 /** Dopo l'apertura della porta la chiamata resta ancora qualche secondo, il tempo di un saluto. */
@@ -102,6 +103,10 @@ export class VideocitofonoCard extends LitElement {
     this._config = config;
     this._s = normalize(config);
     this._synced = false;
+    const tint = tintColor(this._s.color);
+    this.toggleAttribute("tinted", tint !== undefined);
+    if (tint !== undefined) this.style.setProperty("--vc-tint", tint);
+    else this.style.removeProperty("--vc-tint");
     if (before.camera !== this._s.camera || before.camera_fallback !== this._s.camera_fallback) this._useFallback = false;
     if (before.camera !== this._s.camera) { this._twoWay = undefined; this._capsFor = ""; if (!this._call) this._dropSession(); }
     if (before.ring !== this._s.ring) this._ringChecked = false;
@@ -599,6 +604,8 @@ export class VideocitofonoCard extends LitElement {
     :host([overlay]) { height: 100%; }
     ha-card { display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; }
     ha-card.ringing { box-shadow: 0 0 0 2px var(--warning-color, #ffa600); }
+    /* opzione color: la tinta si mescola allo sfondo della scheda del tema (vale uguale su tema chiaro e scuro) */
+    :host([tinted]) ha-card { background: color-mix(in srgb, var(--vc-tint) 30%, var(--ha-card-background, var(--card-background-color, #fff))); border: 1px solid color-mix(in srgb, var(--vc-tint) 55%, transparent); }
     .head { display: flex; align-items: center; gap: 10px; padding: 12px 16px 10px; min-height: 40px; }
     .title { flex: 1; min-width: 0; font-size: 1.1rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .status { font-size: 0.9rem; color: var(--secondary-text-color); white-space: nowrap; }
