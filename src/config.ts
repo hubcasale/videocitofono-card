@@ -1,6 +1,6 @@
 /**
  * Configurazione della scheda (YAML o editor visuale):
- *   type, title, camera, ring, door, door_action, door_label, door_sensor, confirm, confirm_seconds,
+ *   type, title, camera, camera_fallback, ring, door, door_action, door_label, door_sensor, confirm, confirm_seconds,
  *   auto_call, auto_talk, popup, popup_people, call_seconds, end_on_open, talk_mode, idle, fit, info
  * Tutte le preferenze stanno qui: la scheda non salva nulla altrove (a parte, su ogni dispositivo, la copia
  * che serve ad aprire la finestra a tutto schermo quando suona il campanello: vedi overlay.ts).
@@ -15,6 +15,7 @@ export interface CardConfig {
   type?: string;
   title?: string;
   camera?: string;
+  camera_fallback?: string;
   ring?: string;
   door?: string;
   door_action?: DoorAction;
@@ -38,6 +39,7 @@ export interface CardConfig {
 export interface Settings {
   title: string;
   camera: string;
+  camera_fallback: string;
   ring: string;
   door: string;
   door_action: DoorAction;
@@ -58,7 +60,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  title: "", camera: "", ring: "", door: "", door_action: "auto", door_label: "", door_sensor: "",
+  title: "", camera: "", camera_fallback: "", ring: "", door: "", door_action: "auto", door_label: "", door_sensor: "",
   confirm: "tap", confirm_seconds: 5,
   auto_call: true, auto_talk: false, popup: false, popup_people: [],
   call_seconds: 120, end_on_open: true,
@@ -80,6 +82,7 @@ export function normalize(config: CardConfig | null | undefined): Settings {
   return {
     title: str(c.title),
     camera: str(c.camera),
+    camera_fallback: str(c.camera_fallback),
     ring: str(c.ring),
     door: str(c.door),
     door_action: pick(c.door_action, ["auto", "open", "unlock"] as const, DEFAULTS.door_action),
@@ -133,6 +136,7 @@ export const DOOR_DOMAINS = ["lock", "button", "input_button", "script", "switch
 export const EDITOR_SCHEMA = [
   { name: "title", required: false, selector: { text: {} } },
   entity("camera", ["camera"]),
+  entity("camera_fallback", ["camera"]),
   entity("ring", ["binary_sensor", "event", "input_boolean"]),
   group("g_door", [
     entity("door", DOOR_DOMAINS),

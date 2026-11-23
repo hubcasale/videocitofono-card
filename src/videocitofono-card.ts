@@ -11,7 +11,7 @@ import type { RtcLike } from "./rtc";
 import type { Hass, HassState, MicState } from "./types";
 import "./editor";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 /** Tempo di pressione per aprire la porta in modalita' "tieni premuto". */
 const HOLD_MS = 1500;
 /** Dopo l'apertura della porta la chiamata resta ancora qualche secondo, il tempo di un saluto. */
@@ -19,6 +19,13 @@ const END_AFTER_OPEN_MS = 8000;
 const SNAPSHOT_MS = 10_000;
 const RING_BANNER_MS = 20_000;
 const RETRY_MS = 15_000;
+/** Se dopo questo tempo il video non ha ancora un fotogramma, il dispositivo non riesce a decodificarlo. */
+const FRAME_WAIT_MS = 7000;
+/** Telecamere per cui questo dispositivo usa direttamente quella di riserva (con la data: dopo un mese si riprova la principale). */
+const LIGHT_KEY = "videocitofono-card.light";
+const LIGHT_DAYS = 30;
+/** Pacchetti video ricevuti oltre i quali "nessun fotogramma" vuol dire che il dispositivo non decodifica il flusso. */
+const STUCK_PACKETS = 30;
 
 /**
  * Scheda del videocitofono: video dal vivo e audio bidirezionale nativi di Home Assistant, avvio automatico alla suonata,
@@ -30,7 +37,7 @@ export class VideocitofonoCard extends LitElement {
     overlay: { type: Boolean, reflect: true },
     _config: { state: true }, _call: { state: true }, _connecting: { state: true }, _hasVideo: { state: true }, _error: { state: true },
     _micState: { state: true }, _micOn: { state: true }, _talking: { state: true }, _speaker: { state: true }, _needsGesture: { state: true },
-    _armUntil: { state: true }, _holding: { state: true }, _doorMsg: { state: true }, _now: { state: true }, _twoWay: { state: true }, _snapN: { state: true },
+    _armUntil: { state: true }, _holding: { state: true }, _doorMsg: { state: true }, _now: { state: true }, _twoWay: { state: true }, _snapN: { state: true }, _noFrames: { state: true },
   };
 
   declare hass?: Hass;
@@ -51,6 +58,7 @@ export class VideocitofonoCard extends LitElement {
   declare _now: number;
   declare _twoWay: boolean | undefined;
   declare _snapN: number;
+  declare _noFrames: boolean;
 
   private _s: Settings = normalize(null);
   private _session?: RtcLike;
@@ -68,6 +76,8 @@ export class VideocitofonoCard extends LitElement {
   private _doorMsgUntil = 0;
   private _retryAt = 0;
   private _wantTalk = false;
+  private _useFallback = false;
+  private _frameTimer?: number;
 
   constructor() {
     super();
@@ -75,7 +85,7 @@ export class VideocitofonoCard extends LitElement {
     this._config = null;
     this._call = false; this._connecting = false; this._hasVideo = false; this._error = "";
     this._micState = "off"; this._micOn = false; this._talking = false; this._speaker = true; this._needsGesture = false;
-    this._armUntil = 0; this._holding = false; this._doorMsg = ""; this._now = 0; this._twoWay = undefined; this._snapN = 0;
+    this._armUntil = 0; this._holding = false; this._doorMsg = ""; this._now = 0; this._twoWay = undefined; this._snapN = 0; this._noFrames = false;
   }
 
   static getConfigElement(): HTMLElement { return document.createElement("videocitofono-card-editor"); }
@@ -92,6 +102,7 @@ export class VideocitofonoCard extends LitElement {
     this._config = config;
     this._s = normalize(config);
     this._synced = false;
+    if (before.camera !== this._s.camera || before.camera_fallback !== this._s.camera_fallback) this._useFallback = false;
     if (before.camera !== this._s.camera) { this._twoWay = undefined; this._capsFor = ""; if (!this._call) this._dropSession(); }
     if (before.ring !== this._s.ring) this._ringChecked = false;
   }
@@ -220,17 +231,68 @@ export class VideocitofonoCard extends LitElement {
     this._callEnds = this._callEnds ? Math.min(this._callEnds, soon) : soon;
   }
 
+  /** Telecamera in uso: quella di riserva se su questo dispositivo la principale non ha mostrato il video. */
+  private _camera(): string {
+    return this._useFallback && this._s.camera_fallback ? this._s.camera_fallback : this._s.camera;
+  }
+
+  private _lightCameras(): Record<string, number> {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LIGHT_KEY) ?? "{}");
+      const out: Record<string, number> = {};
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        for (const [camera, at] of Object.entries(saved)) if (typeof at === "number" && Date.now() - at < LIGHT_DAYS * 86_400_000) out[camera] = at;
+      }
+      return out;
+    } catch { return {}; }
+  }
+
+  private _rememberLight(): void {
+    try { localStorage.setItem(LIGHT_KEY, JSON.stringify({ ...this._lightCameras(), [this._s.camera]: Date.now() })); }
+    catch { /* senza localStorage si riprova a ogni chiamata */ }
+  }
+
+  /**
+   * Alcuni dispositivi non decodificano i flussi ad alta risoluzione (un iPhone con un H.264 da 5 megapixel): l'audio arriva
+   * ma il video resta nero. Se dopo qualche secondo i pacchetti video arrivano ma nessun fotogramma viene decodificato si passa
+   * alla telecamera di riserva, e il dispositivo se lo ricorda per le chiamate successive.
+   * Con la pagina in secondo piano il browser puo' non decodificare nulla: in quel caso si aspetta.
+   */
+  private _watchFrames(session: RtcLike): void {
+    if (this._frameTimer !== undefined) return;
+    this._frameTimer = window.setTimeout(async () => {
+      this._frameTimer = undefined;
+      if (this._session !== session) return;
+      if (document.visibilityState !== "visible") { this._watchFrames(session); return; }
+      const video = this.renderRoot.querySelector("video") as HTMLVideoElement | null;
+      if (!video || video.videoWidth > 0) return;
+      const stats = session.videoStats ? await session.videoStats().catch(() => null) : null;
+      if (this._session !== session) return;
+      // senza pacchetti il problema e' il collegamento, non la decodifica: cambiare telecamera non servirebbe
+      if (stats && !(stats.packets > STUCK_PACKETS && stats.decoded === 0)) { if (stats.packets > STUCK_PACKETS) return; this._watchFrames(session); return; }
+      if (!this._useFallback && this._s.camera_fallback) {
+        this._useFallback = true;
+        this._rememberLight();
+        const mic = this._mic && (this._micOn || this._s.talk_mode === "hold") ? this._mic : null;
+        void this._connect(mic);
+      } else this._noFrames = true;
+    }, FRAME_WAIT_MS);
+  }
+
   private async _connect(mic: MediaStreamTrack | null): Promise<void> {
     this._dropSession();
     if (!this.hass || !this._s.camera) return;
+    if (!this._useFallback && this._s.camera_fallback && this._lightCameras()[this._s.camera]) this._useFallback = true;
     this._connecting = true;
     this._error = "";
-    const session: RtcLike = createSession(this.hass, this._s.camera, mic, {
+    this._noFrames = false;
+    const session: RtcLike = createSession(this.hass, this._camera(), mic, {
       onStream: (stream) => {
         if (this._session !== session) return;
         this._stream = stream;
         this._hasVideo = true;
         this._connecting = false;
+        this._watchFrames(session);
         this.requestUpdate();
       },
       onState: (state) => {
@@ -253,6 +315,7 @@ export class VideocitofonoCard extends LitElement {
   }
 
   private _dropSession(): void {
+    if (this._frameTimer !== undefined) { clearTimeout(this._frameTimer); this._frameTimer = undefined; }
     this._session?.stop();
     this._session = undefined;
     this._stream = undefined;
@@ -448,6 +511,7 @@ export class VideocitofonoCard extends LitElement {
     else if (this._call && this._micState === "denied") toast = html`<div class="toast">${t("mic_denied")}</div>`;
     else if (this._call && this._micState === "unavailable") toast = html`<div class="toast">${t("mic_unavailable")}</div>`;
     else if (this._call && this._micState === "error") toast = html`<div class="toast">${t("mic_error")}</div>`;
+    else if (this._noFrames && this._hasVideo) toast = html`<div class="toast">${t("no_frames")}</div>`;
     else if (this._call && this._twoWay === false) toast = html`<div class="toast">${t("no_two_way")}</div>`;
     return html`<div class="stage ${s.fit}">
       ${snapshot}

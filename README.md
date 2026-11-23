@@ -50,6 +50,7 @@ info:
 | Opzione | Predefinito | Descrizione |
 | --- | --- | --- |
 | `camera` | | Telecamera con audio bidirezionale nativo. |
+| `camera_fallback` | | Telecamera di riserva più leggera: la scheda ci passa da sola sui dispositivi che non mostrano il video della prima (per esempio un flusso ad alta risoluzione su iPhone) e se lo ricorda. |
 | `ring` | | Sensore del campanello: `binary_sensor` che si accende alla suonata, oppure entità `event`. |
 | `title` | Videocitofono | Titolo della scheda. |
 | `door` | | Serratura o comando di apertura (`lock`, `button`, `input_button`, `script`, `switch`, `cover`, `scene`, `input_boolean`). |
@@ -88,6 +89,7 @@ Se la pagina viene aperta subito dopo la suonata, per esempio da un'automazione 
 
 - Con `auto_talk: true` chi suona sente subito quello che succede vicino al dispositivo. Usalo solo dove ha senso, limitandolo con `popup_people`.
 - Alcuni videocitofoni rimandano indietro la voce di chi parla (eco). La scheda chiede al browser la cancellazione dell'eco; se non basta, `talk_mode: hold` silenzia l'audio in arrivo mentre parli.
+- Gli iPhone non mostrano in WebRTC i flussi H.264 ad alta risoluzione (per esempio 2560×1920): l'audio arriva, il video resta nero. Imposta `camera_fallback` con il flusso secondario della telecamera.
 - Aggiungere il microfono a un collegamento nato senza richiede di riaprirlo: il video si interrompe per un istante.
 
 ## Sviluppo

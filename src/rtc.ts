@@ -12,8 +12,12 @@ export interface RtcHandlers {
   onError(message: string): void;
 }
 
+export interface VideoStats { packets: number; decoded: number }
+
 export interface RtcLike {
   readonly hasMicSender: boolean;
+  /** Pacchetti video ricevuti e fotogrammi decodificati finora; null se il browser non lo dice. */
+  videoStats?(): Promise<VideoStats | null>;
   start(): Promise<void>;
   setMic(track: MediaStreamTrack | null): Promise<void>;
   stop(): void;
@@ -44,7 +48,7 @@ export class RtcSession implements RtcLike {
   private pending: RTCIceCandidateInit[] = [];
   private sender?: RTCRtpSender;
   private closed = false;
-  private stream?: MediaStream;
+  private tracks: MediaStreamTrack[] = [];
 
   constructor(private hass: Hass, private entityId: string, private mic: MediaStreamTrack | null, private handlers: RtcHandlers) {}
 
@@ -58,11 +62,11 @@ export class RtcSession implements RtcLike {
     if (this.mic) this.sender = pc.addTransceiver(this.mic, { direction: "sendrecv" }).sender;
     else pc.addTransceiver("audio", { direction: "recvonly" });
     pc.addTransceiver("video", { direction: "recvonly" });
-    this.stream = new MediaStream();
     pc.ontrack = (ev) => {
-      if (this.closed || !this.stream) return;
-      this.stream.addTrack(ev.track);
-      this.handlers.onStream(this.stream);
+      if (this.closed) return;
+      if (!this.tracks.includes(ev.track)) this.tracks.push(ev.track);
+      // un oggetto nuovo a ogni traccia: Safari non mostra il video se la traccia si aggiunge a uno stream gia' assegnato all'elemento
+      this.handlers.onStream(new MediaStream(this.tracks));
     };
     pc.onconnectionstatechange = () => { if (!this.closed) this.handlers.onState(pc.connectionState); };
     pc.onicecandidate = (ev) => {
@@ -97,6 +101,16 @@ export class RtcSession implements RtcLike {
     this.hass.callWS({ type: "camera/webrtc/candidate", entity_id: this.entityId, session_id: this.sessionId, candidate }).catch(() => { /* la sessione puo' essere gia' chiusa */ });
   }
 
+  async videoStats(): Promise<VideoStats | null> {
+    if (!this.pc) return null;
+    const report = await this.pc.getStats();
+    let out: VideoStats | null = null;
+    report.forEach((r: any) => {
+      if (r.type === "inbound-rtp" && (r.kind === "video" || r.mediaType === "video")) out = { packets: Number(r.packetsReceived ?? 0), decoded: Number(r.framesDecoded ?? 0) };
+    });
+    return out;
+  }
+
   /** Accende o spegne il microfono su una sessione nata con il microfono. */
   async setMic(track: MediaStreamTrack | null): Promise<void> {
     if (!this.sender) return;
@@ -116,8 +130,8 @@ export class RtcSession implements RtcLike {
       this.pc.close();
       this.pc = undefined;
     }
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = undefined;
+    this.tracks.forEach((t) => t.stop());
+    this.tracks = [];
   }
 }
 

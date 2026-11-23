@@ -72,3 +72,9 @@ test("editor: tutti i campi della configurazione sono nello schema", () => {
   walk(EDITOR_SCHEMA as Item[]);
   for (const key of Object.keys(DEFAULTS)) assert.ok(names.has(key), `manca ${key}`);
 });
+
+test("normalize: telecamera di riserva", () => {
+  assert.equal(normalize({}).camera_fallback, "");
+  assert.equal(normalize({ camera_fallback: " camera.leggera " }).camera_fallback, "camera.leggera");
+  assert.deepEqual(fromEditorData({ ...toEditorData({}), camera: "camera.c", camera_fallback: "camera.l" }, null), { type: "custom:videocitofono-card", camera: "camera.c", camera_fallback: "camera.l" });
+});

@@ -39,13 +39,15 @@ window.__videocitofonoRtc = (hass, entityId, mic, handlers) => {
     ctx.fillStyle = "#c9a36b"; ctx.beginPath(); ctx.arc(320+60*Math.sin(t), 210, 60, 0, 6.3); ctx.fill();
     ctx.fillStyle = "#4a6a8a"; ctx.fillRect(250+60*Math.sin(t), 270, 140, 160);
     ctx.fillStyle = "#fff"; ctx.font = "20px sans-serif"; ctx.fillText("video di prova · " + entityId + (sender ? " · microfono collegato" : ""), 16, 30);
-    raf = requestAnimationFrame(draw); };
+    raf = setTimeout(draw, 66); };
   return {
     get hasMicSender() { return sender; },
-    async start() { log("collegamento avviato" + (mic ? " con microfono" : " senza microfono")); if (params.get("fail") === "1") { setTimeout(() => handlers.onError("errore di prova"), 300); return; }
+    async start() { log("collegamento avviato su " + entityId + (mic ? " con microfono" : " senza microfono"));
+      if (params.get("noframes") === "1" && entityId === "camera.videocitofono") { const ac = new AudioContext(); const d = ac.createMediaStreamDestination(); setTimeout(() => { if (!stopped) { handlers.onStream(d.stream); handlers.onState("connected"); } }, 300); return; } if (params.get("fail") === "1") { setTimeout(() => handlers.onError("errore di prova"), 300); return; }
       draw(); setTimeout(() => { if (!stopped) { handlers.onStream(canvas.captureStream(15)); handlers.onState("connected"); } }, Number(params.get("delay") || 400)); },
     async setMic(track) { log("microfono " + (track ? "acceso" : "spento") + " sul collegamento"); },
-    stop() { stopped = true; cancelAnimationFrame(raf); log("collegamento chiuso"); },
+    async videoStats() { return { packets: params.get("nopackets") === "1" ? 0 : 500, decoded: params.get("noframes") === "1" && entityId === "camera.videocitofono" ? 0 : 100 }; },
+    stop() { stopped = true; clearTimeout(raf); log("collegamento chiuso"); },
   };
 };
 // Microfono finto: una traccia audio silenziosa (oppure un rifiuto, con ?mic=denied; ?mic=real usa quello vero).
@@ -59,6 +61,7 @@ if (params.get("mic") !== "real") window.__videocitofonoMic = async () => {
 const iso = (ms) => new Date(ms).toISOString();
 let states = {
   "camera.videocitofono": { entity_id:"camera.videocitofono", state:"idle", attributes:{ friendly_name:"Videocitofono", entity_picture:"data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480"><rect width="640" height="480" fill="#1d262c"/><rect y="330" width="640" height="150" fill="#2c3a2e"/><text x="16" y="30" fill="#aaa" font-size="20" font-family="sans-serif">immagine fissa di prova</text></svg>') }, last_changed: iso(Date.now()-3600e3) },
+  "camera.videocitofono_leggera": { entity_id:"camera.videocitofono_leggera", state:"idle", attributes:{ friendly_name:"Videocitofono leggera" } },
   "binary_sensor.campanello": { entity_id:"binary_sensor.campanello", state:"off", attributes:{ friendly_name:"Visitatore" }, last_changed: iso(Date.now() - (params.get("recent") === "1" ? 10e3 : 3600e3)) },
   "lock.porta": { entity_id:"lock.porta", state:"locked", attributes:{ friendly_name:"Porta ingresso", supported_features: 1 }, last_changed: iso(Date.now()-3600e3) },
   "binary_sensor.porta_aperta": { entity_id:"binary_sensor.porta_aperta", state:"off", attributes:{ friendly_name:"Porta", on_text:"Aperta", off_text:"Chiusa" }, last_changed: iso(Date.now()-3600e3) },
@@ -100,9 +103,10 @@ const cfg = { type:"custom:videocitofono-card", camera:"camera.videocitofono", r
 for (const k of ["title","confirm","talk_mode","idle","fit","door_label"]) if (params.get(k)) cfg[k] = params.get(k);
 for (const k of ["auto_call","auto_talk","popup","end_on_open"]) if (params.get(k)) cfg[k] = params.get(k) === "1";
 for (const k of ["call_seconds","confirm_seconds"]) if (params.get(k)) cfg[k] = Number(params.get(k));
+if (params.get("fallback") === "1") cfg.camera_fallback = "camera.videocitofono_leggera";
 if (params.get("people")) cfg.popup_people = params.get("people").split(",");
 if (params.get("empty") === "1") { delete cfg.camera; delete cfg.door; }
-if (params.get("clear") === "1") localStorage.removeItem("videocitofono-card.popup");
+if (params.get("clear") === "1") { localStorage.removeItem("videocitofono-card.popup"); localStorage.removeItem("videocitofono-card.light"); }
 document.getElementById("note").textContent = JSON.stringify(cfg);
 // shot=1: solo la scheda, per le immagini del README
 if (params.get("shot") === "1") { document.getElementById("tools").style.display = "none"; document.getElementById("log").style.display = "none"; }
